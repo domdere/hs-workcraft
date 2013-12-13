@@ -1,0 +1,24 @@
+Default: &defaults
+  user: wcraft
+  password: wcraft
+  host: localhost
+  port: 5432
+  database: wcraft_dev
+  poolsize: 10
+
+Development:
+  <<: *defaults
+
+Testing:
+  database: wcraft_tst
+  <<: *defaults
+
+Staging:
+  database: wcraft_stg
+  poolsize: 100
+  <<: *defaults
+
+Production:
+  database: wcraft
+  poolsize: 100
+  <<: *defaults
