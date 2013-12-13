@@ -1,6 +1,8 @@
-# Workcraft Service
+# Workcraft Service [![Build Status](https://travis-ci.org/domdere/hs-workcraft.png?branch=master)](https://travis-ci.org/domdere/hs-workcraft)
 
 Workcraft Service
+
+An blogging backend service to learn about and/or experiment with **Yesod**.
 
 ## Building the project
 
