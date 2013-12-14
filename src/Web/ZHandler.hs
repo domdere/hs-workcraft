@@ -30,26 +30,133 @@ THE SOFTWARE.
 --
 -- This will probably help with unit testing too
 --
-module Web.ZHandler where
+module Web.ZHandler
+    (   Method(..)
+    ,   ZHeaders(..)
+    ,   ZRequest(..)
+    ,   ZError
+    ,   ZHandler
+    ,   ZLogMessage(..)
+    ,   emptyResponse
+--    ,   runZHandler
+    ) where
 
 import Prelude
-    (   Show(..)
+    (   ($)
+    ,   Show(..)
     ,   Eq(..)
     )
 
+import Control.Applicative
+import Control.Monad.Error
+import Control.Monad.Identity
+import Control.Monad.Reader
+import Control.Monad.Writer
+import Control.Monad.State
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as LBS
-import Data.Map
+import Data.Function ( on )
+import Data.Int
+import Data.List
+import qualified Data.Map as M
+import Data.Monoid
 import qualified Data.Text as T
 import Network.HTTP.Types.Header
 
+-- Types
+
 data Method = Get | Post | Put | Delete deriving (Show, Eq)
 
+newtype ZHeaders = ZHeaders
+    {   runHeaders :: M.Map HeaderName BS.ByteString
+    } deriving (Show, Eq)
+
+instance Monoid ZHeaders where
+    mempty = ZHeaders $ M.fromList []
+
+    mappend x y = ZHeaders ((M.union `on` runHeaders) x y)
+
 data ZRequest = ZRequest
-    {   getPrms         :: Map T.Text T.Text
-    ,   getCookieVals   :: Map T.Text T.Text
-    ,   reqHeaders      :: Map HeaderName BS.ByteString
+    {   getPrms         :: M.Map T.Text T.Text
+    ,   getCookieVals   :: M.Map T.Text T.Text
+    ,   reqHeaders      :: ZHeaders
     ,   getContent      :: LBS.ByteString
     } deriving (Show, Eq)
 
-data ZHandler a = ZHandler deriving (Show, Eq)
+-- | The different error codes I have used so far
+data ZError =
+        NotFound
+    |   NotAcceptable [T.Text]
+    |   InvalidArgs [T.Text] deriving (Show, Eq)
+
+data ZLogMessage =
+        Debug T.Text
+    |   Info T.Text deriving (Show, Eq)
+
+data ZAccruedResponseState = ZAccruedResponseState
+    {   getAllHeaders :: ZHeaders
+    } deriving (Show, Eq)
+
+instance Monoid ZAccruedResponseState where
+    mempty = ZAccruedResponseState mempty
+
+    x `mappend` y = ZAccruedResponseState
+        ((mappend `on` getAllHeaders) x y)
+
+data ZResponse a =
+        Incomplete ZAccruedResponseState a
+    |   Complete ZAccruedResponseState LBS.ByteString a deriving (Show, Eq)
+
+instance Functor ZResponse where
+    f `fmap` (Incomplete s x) = Incomplete s $ f x
+    f `fmap` (Complete s b x) = Complete s b $ f x
+
+instance Applicative ZResponse where
+    pure = Incomplete mempty
+
+    (Incomplete s f) <*> (Incomplete s' x) = Incomplete (s `mappend` s') $ f x
+    (Incomplete s f) <*> (Complete s' b x) = Complete (s `mappend` s') b $ f x
+    (Complete s b f) <*> x = Complete s b $ f (runResponse x)
+
+instance Monad ZResponse where
+    return = pure
+    x >>= f = joinResponse $ f `fmap` x
+
+newtype ZHandler a = ZHandler
+    {   runZHandler :: ReaderT ZRequest (WriterT [ZLogMessage] ZResponse) a
+    }
+
+-- Functions
+
+-- | Error codes for different error scenarios
+--
+-- >>> zErrorCode NotFound
+-- 404
+--
+-- >>> zErrorCode (NotAcceptable [])
+-- 406
+--
+-- >>> zErrorCode (InvalidArgs [])
+-- 400
+--
+zErrorCode :: ZError -> Int
+zErrorCode NotFound             = 404
+zErrorCode (NotAcceptable _)    = 406
+zErrorCode (InvalidArgs _)      = 400
+
+-- | Creates the empty unfilled response
+emptyResponse :: ZResponse ()
+emptyResponse = Incomplete mempty ()
+
+-- | extracts the value from the response
+runResponse :: ZResponse a -> a
+runResponse (Incomplete _ x) = x
+runResponse (Complete _ _ x) = x
+
+-- | flatten a response
+--
+joinResponse :: ZResponse (ZResponse a) -> ZResponse a
+joinResponse (Incomplete s (Incomplete s' x))   = Incomplete (s `mappend` s') x
+joinResponse (Incomplete s (Complete s' b x))   = Complete (s `mappend` s') b x
+joinResponse (Complete s b (Incomplete _ x))    = Complete s b x
+joinResponse (Complete s b (Complete _ _ x))    = Complete s b x

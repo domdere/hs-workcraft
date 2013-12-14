@@ -66,7 +66,7 @@ convertZHandler _ = do
     yesodReq <- getRequest
     waiReq <- waiRequest
     body <- lift $ lazyConsume $ requestBody waiReq
-    let headers = fromList $ requestHeaders waiReq
+    let headers = ZHeaders $ fromList $ requestHeaders waiReq
     let getParams = fromList $ reqGetParams yesodReq
     let cookieParams = fromList $ reqCookies yesodReq
     let reqBody = BS.fromChunks body
