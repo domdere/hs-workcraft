@@ -32,13 +32,14 @@ THE SOFTWARE.
 --
 module Web.ZHandler
     (   Method(..)
+    ,   ZCookie(..)
     ,   ZHeaders(..)
     ,   ZRequest(..)
     ,   ZError
     ,   ZHandler
+    ,   ZHandlerT
     ,   ZLogMessage(..)
-    ,   emptyResponse
---    ,   runZHandler
+    ,   runZHandlerT
     ) where
 
 import Prelude
@@ -55,7 +56,8 @@ import Control.Monad.Writer
 import Control.Monad.State
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as LBS
-import Data.Function ( on )
+import Data.Either
+import Data.Function ( (.), on )
 import Data.Int
 import Data.List
 import qualified Data.Map as M
@@ -74,11 +76,20 @@ newtype ZHeaders = ZHeaders
 instance Monoid ZHeaders where
     mempty = ZHeaders $ M.fromList []
 
-    mappend x y = ZHeaders ((M.union `on` runHeaders) x y)
+    mappend x y = ZHeaders $ (M.union `on` runHeaders) x y
+
+newtype ZCookie = ZCookie
+    {   cookieMap :: M.Map T.Text T.Text
+    } deriving (Show, Eq)
+
+instance Monoid ZCookie where
+    mempty = ZCookie $ M.fromList []
+
+    mappend x y = ZCookie $ (M.union `on` cookieMap) x y
 
 data ZRequest = ZRequest
     {   getPrms         :: M.Map T.Text T.Text
-    ,   getCookieVals   :: M.Map T.Text T.Text
+    ,   getCookieVals   :: ZCookie
     ,   reqHeaders      :: ZHeaders
     ,   getContent      :: LBS.ByteString
     } deriving (Show, Eq)
@@ -93,40 +104,31 @@ data ZLogMessage =
         Debug T.Text
     |   Info T.Text deriving (Show, Eq)
 
-data ZAccruedResponseState = ZAccruedResponseState
-    {   getAllHeaders :: ZHeaders
+-- | Represents the accrued headers and cookie key-value settings
+-- from a REST computation
+data ZRESTState = ZRESTState
+    {   getAllHeaders   :: ZHeaders
+    ,   getSetCookie    :: ZCookie
     } deriving (Show, Eq)
 
-instance Monoid ZAccruedResponseState where
-    mempty = ZAccruedResponseState mempty
+instance Monoid ZRESTState where
+    mempty = ZRESTState mempty mempty
 
-    x `mappend` y = ZAccruedResponseState
+    x `mappend` y = ZRESTState
         ((mappend `on` getAllHeaders) x y)
+        ((mappend `on` getSetCookie) x y)
 
-data ZResponse a =
-        Incomplete ZAccruedResponseState a
-    |   Complete ZAccruedResponseState LBS.ByteString a deriving (Show, Eq)
+newtype ZHandlerT m a = ZHandlerT ((ErrorT ZError m) a)
 
-instance Functor ZResponse where
-    f `fmap` (Incomplete s x) = Incomplete s $ f x
-    f `fmap` (Complete s b x) = Complete s b $ f x
-
-instance Applicative ZResponse where
-    pure = Incomplete mempty
-
-    (Incomplete s f) <*> (Incomplete s' x) = Incomplete (s `mappend` s') $ f x
-    (Incomplete s f) <*> (Complete s' b x) = Complete (s `mappend` s') b $ f x
-    (Complete s b f) <*> x = Complete s b $ f (runResponse x)
-
-instance Monad ZResponse where
-    return = pure
-    x >>= f = joinResponse $ f `fmap` x
-
-newtype ZHandler a = ZHandler
-    {   runZHandler :: ReaderT ZRequest (WriterT [ZLogMessage] ZResponse) a
-    }
+type ZHandler a = ZHandlerT Identity a
 
 -- Functions
+
+runZHandlerT :: (Monad m) => ZHandlerT m a -> m (Either ZError a)
+runZHandlerT (ZHandlerT m) = runErrorT m
+
+runZHandler :: ZHandler a -> Either ZError a
+runZHandler = runIdentity . runZHandlerT
 
 -- | Error codes for different error scenarios
 --
@@ -144,19 +146,3 @@ zErrorCode NotFound             = 404
 zErrorCode (NotAcceptable _)    = 406
 zErrorCode (InvalidArgs _)      = 400
 
--- | Creates the empty unfilled response
-emptyResponse :: ZResponse ()
-emptyResponse = Incomplete mempty ()
-
--- | extracts the value from the response
-runResponse :: ZResponse a -> a
-runResponse (Incomplete _ x) = x
-runResponse (Complete _ _ x) = x
-
--- | flatten a response
---
-joinResponse :: ZResponse (ZResponse a) -> ZResponse a
-joinResponse (Incomplete s (Incomplete s' x))   = Incomplete (s `mappend` s') x
-joinResponse (Incomplete s (Complete s' b x))   = Complete (s `mappend` s') b x
-joinResponse (Complete s b (Incomplete _ x))    = Complete s b x
-joinResponse (Complete s b (Complete _ _ x))    = Complete s b x
