@@ -36,16 +36,21 @@ module Web.ZHandler
     ,   ZHeaders(..)
     ,   ZRequest(..)
     ,   ZError
+    ,   ZLogMessage(..)
+    ,   ZRESTReport(..)
+    ,   ZRESTState
     ,   ZHandler
     ,   ZHandlerT
-    ,   ZLogMessage(..)
+    ,   runZHandler
     ,   runZHandlerT
+    ,   addHeaders
     ) where
 
 import Prelude
     (   ($)
     ,   Show(..)
     ,   Eq(..)
+    ,   flip
     ,   id
     )
 
@@ -54,7 +59,7 @@ import Control.Monad.Error
 import Control.Monad.Identity
 import Control.Monad.Reader
 import Control.Monad.Writer
-import Control.Monad.State
+import Control.Monad.Trans
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as LBS
 import Data.Either
@@ -65,6 +70,12 @@ import qualified Data.Map as M
 import Data.Monoid
 import qualified Data.Text as T
 import Network.HTTP.Types.Header
+
+-- $setup
+--
+-- >>> import Test.QuickCheck
+-- >>> import Data.Tuple
+-- >>> let testZHandler = runZHandler emptyRequest
 
 -- Types
 
@@ -98,8 +109,14 @@ data ZRequest = ZRequest
 -- | The different error codes I have used so far
 data ZError =
         NotFound
+    |   ServerError [T.Text]
     |   NotAcceptable [T.Text]
     |   InvalidArgs [T.Text] deriving (Show, Eq)
+
+instance Error ZError where
+    noMsg = ServerError []
+
+    strMsg s = ServerError [T.pack s]
 
 data ZLogMessage =
         Debug T.Text
@@ -110,39 +127,62 @@ data ZLogMessage =
 data ZRESTState = ZRESTState
     {   getAllHeaders   :: ZHeaders
     ,   getSetCookie    :: ZCookie
+    ,   getLogMsgs      :: [ZLogMessage]
     } deriving (Show, Eq)
 
 instance Monoid ZRESTState where
-    mempty = ZRESTState mempty mempty
+    mempty = ZRESTState mempty mempty mempty
 
     x `mappend` y = ZRESTState
         ((mappend `on` getAllHeaders) x y)
         ((mappend `on` getSetCookie) x y)
+        ((mappend `on` getLogMsgs) x y)
+
+newtype ZRESTReport = ZRESTReport ZRESTState
+
+instance Show ZRESTReport where
+    show (ZRESTReport s) = intercalate "\n" $ join
+        [   showMap headers
+        ,   showMap cookie
+        ]
+        where
+            showMap = fmap (\(k, v) -> show k ++ ": " ++ show v)
+            headers = (M.toList . runHeaders . getAllHeaders) s
+            cookie  = (M.toList . cookieMap . getSetCookie) s
+
+type RWE m a = ReaderT ZRequest (ErrorT ZError (WriterT ZRESTState m)) a
 
 -- | we want error reporting, logging, accumulation of headers and cookie values,
 -- and its going to read in the original resquest that spurred off the original REST
 -- computation.
 newtype ZHandlerT m a = ZHandlerT
-    {   unwrap :: WriterT [ZLogMessage] (ErrorT ZError m) a
+    {   unwrap :: RWE m a
     }
+
+instance (Monad m) => Monad (ZHandlerT m) where
+    return = ZHandlerT . return
+
+    (ZHandlerT ma) >>= f = ZHandlerT $ ma >>= (unwrap . f)
+
+instance MonadTrans ZHandlerT where
+    lift = ZHandlerT . lift . lift . lift
+
+instance (Monad m) => MonadWriter ZRESTState (ZHandlerT m) where
+    writer = ZHandlerT . writer
+
+    listen = liftRWE listen
+
+    pass = liftRWE pass
 
 type ZHandler a = ZHandlerT Identity a
 
 -- Functions
 
-runZHandlerTStack :: (Monad m) => ZHandlerT m a -> m (Either ZError (a, [ZLogMessage]))
-runZHandlerTStack = runErrorT . runWriterT . unwrap
+runZHandlerT :: (Monad m) => ZRequest -> ZHandlerT m a -> m (Either ZError a, ZRESTState)
+runZHandlerT req = runWriterT . runErrorT . flip runReaderT req . unwrap
 
-rearrange :: a -> a
-rearrange = id
-
--- | I want to extract an m ((Either ZError a, [ZLogLine], ZRESTState))
-runZHandlerT :: (Monad m) => ZHandlerT m a -> m (Either ZError (a, [ZLogMessage]))
-runZHandlerT = liftM rearrange . runZHandlerTStack
-
--- | 
-runZHandler :: ZHandler a -> Either ZError (a, [ZLogMessage])
-runZHandler = runIdentity . runZHandlerT
+runZHandler :: ZRequest -> ZHandler a -> (Either ZError a, ZRESTState)
+runZHandler = (runIdentity .) . runZHandlerT
 
 -- | Error codes for different error scenarios
 --
@@ -157,6 +197,32 @@ runZHandler = runIdentity . runZHandlerT
 --
 zErrorCode :: ZError -> Int
 zErrorCode NotFound             = 404
+zErrorCode (ServerError _)      = 500
 zErrorCode (NotAcceptable _)    = 406
 zErrorCode (InvalidArgs _)      = 400
 
+emptyRequest :: ZRequest
+emptyRequest = ZRequest (M.fromList []) (ZCookie $ M.fromList []) (ZHeaders $ M.fromList []) ""
+
+-- | A synonym for "," that makes the Header assignment like more of the form "Header : Value"
+-- in most plaintext serialisations of Headers
+--
+-- >>> "Content-Type" .: "application/json"
+-- ("Content-Type","application/json")
+--
+(.:) :: HeaderName -> BS.ByteString -> (HeaderName, BS.ByteString)
+(.:) = (,)
+
+-- | Sets a header
+--
+-- >>> ZRESTReport $ snd $ testZHandler (addHeaders ["Content-Type" .: "application/xml", "Some-Other-Header" .: "And its value"])
+-- "Content-Type": "application/xml"
+-- "Some-Other-Header": "And its value"
+--
+addHeaders :: (Monad m) => [(HeaderName, BS.ByteString)] -> ZHandlerT m ()
+addHeaders kvs = tell $ mempty { getAllHeaders = ZHeaders $ M.fromList kvs }
+
+-- Helpers
+
+liftRWE :: (RWE m a -> RWE m b) -> ZHandlerT m a -> ZHandlerT m b
+liftRWE f = ZHandlerT . f . unwrap
