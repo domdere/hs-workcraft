@@ -46,6 +46,7 @@ import Prelude
     (   ($)
     ,   Show(..)
     ,   Eq(..)
+    ,   id
     )
 
 import Control.Applicative
@@ -118,16 +119,29 @@ instance Monoid ZRESTState where
         ((mappend `on` getAllHeaders) x y)
         ((mappend `on` getSetCookie) x y)
 
-newtype ZHandlerT m a = ZHandlerT ((ErrorT ZError m) a)
+-- | we want error reporting, logging, accumulation of headers and cookie values,
+-- and its going to read in the original resquest that spurred off the original REST
+-- computation.
+newtype ZHandlerT m a = ZHandlerT
+    {   unwrap :: WriterT [ZLogMessage] (ErrorT ZError m) a
+    }
 
 type ZHandler a = ZHandlerT Identity a
 
 -- Functions
 
-runZHandlerT :: (Monad m) => ZHandlerT m a -> m (Either ZError a)
-runZHandlerT (ZHandlerT m) = runErrorT m
+runZHandlerTStack :: (Monad m) => ZHandlerT m a -> m (Either ZError (a, [ZLogMessage]))
+runZHandlerTStack = runErrorT . runWriterT . unwrap
 
-runZHandler :: ZHandler a -> Either ZError a
+rearrange :: a -> a
+rearrange = id
+
+-- | I want to extract an m ((Either ZError a, [ZLogLine], ZRESTState))
+runZHandlerT :: (Monad m) => ZHandlerT m a -> m (Either ZError (a, [ZLogMessage]))
+runZHandlerT = liftM rearrange . runZHandlerTStack
+
+-- | 
+runZHandler :: ZHandler a -> Either ZError (a, [ZLogMessage])
 runZHandler = runIdentity . runZHandlerT
 
 -- | Error codes for different error scenarios
