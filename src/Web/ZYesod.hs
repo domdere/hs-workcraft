@@ -39,10 +39,18 @@ import Prelude
     )
 
 import qualified Data.ByteString.Lazy as BS
+import Data.CaseInsensitive ( original )
 import Data.Conduit.Lazy ( lazyConsume )
+import Data.Either
+import Data.Function ( (.), on )
 import Data.Functor
-import Data.Map ( fromList )
+import Data.Map ( fromList, toList )
+import qualified Data.Text as T
+import Data.Text.Encoding ( decodeUtf8 )
+import Data.Tuple (uncurry)
 import Database.Persist.Sql ( SqlBackend )
+import Control.Arrow
+import Control.Monad ( return, sequence_ )
 import Network.Wai
 import Yesod
 import Yesod.Core.Handler
@@ -61,14 +69,38 @@ class
 -- and then run a ZHandler Monad with it, but i havent finished
 -- writing the monad, i just want to make sure I know how to get the info i want
 -- with Yesod...
-convertZHandler :: (ZYesod m) => ZHandler a -> HandlerT m IO a
-convertZHandler _ = do
-    yesodReq <- getRequest
-    waiReq <- waiRequest
-    body <- lift $ lazyConsume $ requestBody waiReq
-    let headers = ZHeaders $ fromList $ requestHeaders waiReq
-    let getParams = fromList $ reqGetParams yesodReq
-    let cookieParams = ZCookie $ fromList $ reqCookies yesodReq
-    let reqBody = BS.fromChunks body
-    let req = ZRequest getParams cookieParams headers reqBody
-    invalidArgs ["TODO"]
+convertZHandlerIO :: (ZYesod m) => ZHandlerT IO a -> HandlerT m IO a
+convertZHandlerIO z =
+    let
+        prepareHeaders = (fmap ((decodeUtf8 . original) *** decodeUtf8) . toList . runHeaders . getAllHeaders)
+    in do
+        yesodReq <- getRequest
+        waiReq <- waiRequest
+        body <- lift $ lazyConsume $ requestBody waiReq
+        let headers = ZHeaders $ fromList $ requestHeaders waiReq
+        let getParams = fromList $ reqGetParams yesodReq
+        let cookieParams = ZCookie $ fromList $ reqCookies yesodReq
+        let reqBody = BS.fromChunks body
+        let req = ZRequest getParams cookieParams headers reqBody
+        -- out :: (Either ZError a, ZRESTState)
+        (eResult, s) <- liftIO $ runZHandlerT req z
+        -- make sure to log everything..
+        sequence_ $ logZMsg <$> getLogMsgs s
+        case eResult of
+            -- now to determine the response, first check if there was an error
+            -- if there was, we dont need to set the headers, Yesod can set them
+            -- appropriately depending on the users request headers...
+            Left ZNotFound                  -> notFound
+            Left (ZServerError msg)         -> error (T.unpack msg)
+            Left (ZPermissionDenied msg)    -> permissionDenied msg
+            Left ZBadMethod                 -> badMethod
+            Left (ZInvalidArgs msgs)        -> invalidArgs msgs
+            Right val                       -> do
+                -- set the headers and session values and return the result
+                sequence_ $ uncurry addHeader <$> prepareHeaders s
+                -- TODO: Still have to set cookies
+                return val
+
+logZMsg :: ZLogMessage -> HandlerT m IO ()
+logZMsg (Info msg)  = $(logInfo) msg
+logZMsg (Debug msg) = $(logDebug) msg

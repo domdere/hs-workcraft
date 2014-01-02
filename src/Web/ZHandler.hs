@@ -31,19 +31,28 @@ THE SOFTWARE.
 -- This will probably help with unit testing too
 --
 module Web.ZHandler
+    -- | Auxiliary Types
     (   Method(..)
     ,   ZCookie(..)
     ,   ZHeaders(..)
     ,   ZRequest(..)
-    ,   ZError
+    ,   ZError(..)
     ,   ZLogMessage(..)
     ,   ZRESTReport(..)
-    ,   ZRESTState
+    ,   ZRESTState(..)
+
+    -- | The Monad
     ,   ZHandler
     ,   ZHandlerT
+
+    -- | Writer Helpers
+    ,   addHeaders
+    ,   logMsg
+    ,   putSessionValues
+
+    -- | Unwrapping the monad
     ,   runZHandler
     ,   runZHandlerT
-    ,   addHeaders
     ) where
 
 import Prelude
@@ -108,15 +117,16 @@ data ZRequest = ZRequest
 
 -- | The different error codes I have used so far
 data ZError =
-        NotFound
-    |   ServerError [T.Text]
-    |   NotAcceptable [T.Text]
-    |   InvalidArgs [T.Text] deriving (Show, Eq)
+        ZNotFound
+    |   ZServerError T.Text
+    |   ZBadMethod
+    |   ZPermissionDenied T.Text
+    |   ZInvalidArgs [T.Text] deriving (Show, Eq)
 
 instance Error ZError where
-    noMsg = ServerError []
+    noMsg = ZServerError ""
 
-    strMsg s = ServerError [T.pack s]
+    strMsg s = ZServerError (T.pack s)
 
 data ZLogMessage =
         Debug T.Text
@@ -188,31 +198,38 @@ runZHandler = (runIdentity .) . runZHandlerT
 
 -- | Error codes for different error scenarios
 --
--- >>> zErrorCode NotFound
+-- >>> zErrorCode ZNotFound
 -- 404
 --
--- >>> zErrorCode (NotAcceptable [])
--- 406
+-- >>> zErrorCode ZBadMethod
+-- 405
 --
--- >>> zErrorCode (InvalidArgs [])
+-- >>> zErrorCode (ZPermissionDenied "")
+-- 403
+--
+-- >>> zErrorCode (ZInvalidArgs [])
 -- 400
 --
+-- >>> zErrorCode (ZServerError [])
+-- 500
+--
 zErrorCode :: ZError -> Int
-zErrorCode NotFound             = 404
-zErrorCode (ServerError _)      = 500
-zErrorCode (NotAcceptable _)    = 406
-zErrorCode (InvalidArgs _)      = 400
+zErrorCode ZNotFound                = 404
+zErrorCode (ZServerError _)         = 500
+zErrorCode ZBadMethod               = 405
+zErrorCode (ZPermissionDenied _)    = 403
+zErrorCode (ZInvalidArgs _)         = 400
 
 emptyRequest :: ZRequest
 emptyRequest = ZRequest (M.fromList []) (ZCookie $ M.fromList []) (ZHeaders $ M.fromList []) ""
 
--- | A synonym for "," that makes the Header assignment like more of the form "Header : Value"
+-- | An alias for "," that makes the Header assignment like more of the form "Header : Value"
 -- in most plaintext serialisations of Headers
 --
 -- >>> "Content-Type" .: "application/json"
 -- ("Content-Type","application/json")
 --
-(.:) :: HeaderName -> BS.ByteString -> (HeaderName, BS.ByteString)
+(.:) :: a -> b -> (a, b)
 (.:) = (,)
 
 -- | Sets a header
@@ -228,6 +245,19 @@ addHeaders kvs = tell $ mempty { getAllHeaders = ZHeaders $ M.fromList kvs }
 
 -- | Writes session values
 --
+-- >>> ZRESTReport $ snd $ testZHandler (putSessionValues ["_id" .: "blah234356d", "somethingelse" .: "blach"])
+-- Headers:
+-- Session Values:
+-- "_id": "blah234356d"
+-- "somethingelse": "blach"
+--
+putSessionValues :: (Monad m) => [(T.Text, T.Text)] -> ZHandlerT m ()
+putSessionValues kvs = tell $ mempty { getSetCookie = ZCookie $ M.fromList kvs }
+
+-- | For writing log messages...
+--
+logMsg :: (Monad m) => ZLogMessage -> ZHandlerT m ()
+logMsg msg = tell $ mempty { getLogMsgs = [msg] }
 
 -- Helpers
 
