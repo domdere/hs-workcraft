@@ -142,7 +142,9 @@ newtype ZRESTReport = ZRESTReport ZRESTState
 
 instance Show ZRESTReport where
     show (ZRESTReport s) = intercalate "\n" $ join
-        [   showMap headers
+        [   ["Headers:"]
+        ,   showMap headers
+        ,   ["Session Values:"]
         ,   showMap cookie
         ]
         where
@@ -153,7 +155,7 @@ instance Show ZRESTReport where
 type RWE m a = ReaderT ZRequest (ErrorT ZError (WriterT ZRESTState m)) a
 
 -- | we want error reporting, logging, accumulation of headers and cookie values,
--- and its going to read in the original resquest that spurred off the original REST
+-- and its going to read in the original request that spurred off the original REST
 -- computation.
 newtype ZHandlerT m a = ZHandlerT
     {   unwrap :: RWE m a
@@ -216,11 +218,16 @@ emptyRequest = ZRequest (M.fromList []) (ZCookie $ M.fromList []) (ZHeaders $ M.
 -- | Sets a header
 --
 -- >>> ZRESTReport $ snd $ testZHandler (addHeaders ["Content-Type" .: "application/xml", "Some-Other-Header" .: "And its value"])
+-- Headers:
 -- "Content-Type": "application/xml"
 -- "Some-Other-Header": "And its value"
+-- Session Values:
 --
 addHeaders :: (Monad m) => [(HeaderName, BS.ByteString)] -> ZHandlerT m ()
 addHeaders kvs = tell $ mempty { getAllHeaders = ZHeaders $ M.fromList kvs }
+
+-- | Writes session values
+--
 
 -- Helpers
 
