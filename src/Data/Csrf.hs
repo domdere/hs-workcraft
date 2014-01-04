@@ -22,6 +22,38 @@ along with Workcraft.  If not, see <http://www.gnu.org/licenses/>.
 
 module Data.Csrf where
 
-import 
+import Prelude
+    (   Eq(..)
+    ,   Show(..)
+    ,   IO
+    ,   ($)
+    ,   fromIntegral
+    )
 
-data CSRFToken = CSRFToken 
+import Control.Monad
+import Crypto.Classes ( constTimeEq )
+import qualified Data.ByteString as BS
+import Data.ByteString.Base64 ( encode )
+import Data.Function ( on, (.) )
+import Data.Functor
+import Data.Int ( Int )
+import Data.List ( take )
+import qualified Data.Text as T
+import Data.Text.Encoding ( decodeUtf8, encodeUtf8 )
+import System.Random ( randoms )
+import System.Random.Mersenne.Pure64 ( newPureMT )
+
+newtype CSRFToken = CSRFToken { toByteString :: BS.ByteString } deriving (Show)
+
+-- Instances
+
+instance Eq CSRFToken where
+    (==) = constTimeEq `on` toByteString
+
+toText :: CSRFToken -> T.Text
+toText = decodeUtf8 . toByteString
+
+createRandomCsrf :: IO CSRFToken
+createRandomCsrf = do
+    prng <- newPureMT
+    return $ (CSRFToken . encode . BS.pack . fmap fromIntegral) (take 24 (randoms prng :: [Int]))
