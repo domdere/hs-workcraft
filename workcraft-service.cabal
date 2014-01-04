@@ -1,6 +1,6 @@
 name:               workcraft-service
 version:            0.0.1
-license:            MIT
+license:            GPL-3
 license-file:       etc/LICENCE.md
 author:             Dom De Re
 maintainer:         Dom De Re
