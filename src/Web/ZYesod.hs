@@ -72,17 +72,17 @@ class
 convertZHandlerIO :: (ZYesod m) => ZHandlerT IO a -> HandlerT m IO a
 convertZHandlerIO z =
     let
-        prepareHeaders = (fmap ((decodeUtf8 . original) *** decodeUtf8) . toList . runHeaders . getAllHeaders)
+        prepareHeaders = fmap ((decodeUtf8 . original) *** decodeUtf8) . toList . runHeaders . getAllHeaders
+        prepareCookies = toList . cookieMap . getSetCookie
     in do
         yesodReq <- getRequest
         waiReq <- waiRequest
-        body <- lift $ lazyConsume $ requestBody waiReq
-        let headers = ZHeaders $ fromList $ requestHeaders waiReq
-        let getParams = fromList $ reqGetParams yesodReq
-        let cookieParams = ZCookie $ fromList $ reqCookies yesodReq
+        body <- (lift . lazyConsume . requestBody) waiReq
+        let headers = (ZHeaders . fromList . requestHeaders) waiReq
+        let getParams = (fromList . reqGetParams) yesodReq
+        let cookieParams = (ZCookie . fromList . reqCookies) yesodReq
         let reqBody = BS.fromChunks body
         let req = ZRequest getParams cookieParams headers reqBody
-        -- out :: (Either ZError a, ZRESTState)
         (eResult, s) <- liftIO $ runZHandlerT req z
         -- make sure to log everything..
         sequence_ $ logZMsg <$> getLogMsgs s
@@ -98,7 +98,7 @@ convertZHandlerIO z =
             Right val                       -> do
                 -- set the headers and session values and return the result
                 sequence_ $ uncurry addHeader <$> prepareHeaders s
-                -- TODO: Still have to set cookies
+                sequence_ $ uncurry setSession <$> prepareCookies s
                 return val
 
 logZMsg :: ZLogMessage -> HandlerT m IO ()

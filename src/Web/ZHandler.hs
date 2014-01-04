@@ -31,8 +31,8 @@ THE SOFTWARE.
 -- This will probably help with unit testing too
 --
 module Web.ZHandler
-    -- | Auxiliary Types
     (   Method(..)
+    -- | Auxiliary Types
     ,   ZCookie(..)
     ,   ZHeaders(..)
     ,   ZRequest(..)
@@ -56,9 +56,10 @@ module Web.ZHandler
     ) where
 
 import Prelude
-    (   ($)
+    (   String
     ,   Show(..)
     ,   Eq(..)
+    ,   ($)
     ,   flip
     ,   id
     )
@@ -162,6 +163,15 @@ instance Show ZRESTReport where
             headers = (M.toList . runHeaders . getAllHeaders) s
             cookie  = (M.toList . cookieMap . getSetCookie) s
 
+newtype ZRESTLogReport = ZRESTLogReport ZRESTState
+
+instance Show ZRESTLogReport where
+    show (ZRESTLogReport s) = (intercalate "\n" . fmap showLogMsg . getLogMsgs) s
+        where
+            showLogMsg :: ZLogMessage -> String
+            showLogMsg (Debug msg)  = "(Debug) " ++ show msg
+            showLogMsg (Info msg)   = "(Info) " ++ show msg
+
 type RWE m a = ReaderT ZRequest (ErrorT ZError (WriterT ZRESTState m)) a
 
 -- | we want error reporting, logging, accumulation of headers and cookie values,
@@ -210,7 +220,7 @@ runZHandler = (runIdentity .) . runZHandlerT
 -- >>> zErrorCode (ZInvalidArgs [])
 -- 400
 --
--- >>> zErrorCode (ZServerError [])
+-- >>> zErrorCode (ZServerError "")
 -- 500
 --
 zErrorCode :: ZError -> Int
@@ -255,6 +265,23 @@ putSessionValues :: (Monad m) => [(T.Text, T.Text)] -> ZHandlerT m ()
 putSessionValues kvs = tell $ mempty { getSetCookie = ZCookie $ M.fromList kvs }
 
 -- | For writing log messages...
+--
+-- >>> let debugLogLine = logMsg (Debug "Test Debug Log Line")
+-- >>> let infoLogLine  = logMsg (Info "Test Info Log Line")
+--
+-- >>> (ZRESTLogReport . snd . testZHandler) debugLogLine
+-- (Debug) "Test Debug Log Line"
+--
+-- >>> (ZRESTLogReport . snd . testZHandler) infoLogLine
+-- (Info) "Test Info Log Line"
+--
+-- >>> (ZRESTLogReport . snd . testZHandler . sequence_) [debugLogLine, infoLogLine]
+-- (Debug) "Test Debug Log Line"
+-- (Info) "Test Info Log Line"
+--
+-- >>> (ZRESTLogReport . snd . testZHandler . sequence_) [infoLogLine, debugLogLine]
+-- (Info) "Test Info Log Line"
+-- (Debug) "Test Debug Log Line"
 --
 logMsg :: (Monad m) => ZLogMessage -> ZHandlerT m ()
 logMsg msg = tell $ mempty { getLogMsgs = [msg] }
