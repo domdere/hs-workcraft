@@ -31,13 +31,14 @@ import Prelude
     )
 
 import Control.Monad
+import Control.Monad.Error
 import Crypto.Classes ( constTimeEq )
 import qualified Data.ByteString as BS
 import Data.ByteString.Base64 ( encode )
 import Data.Function ( on, (.) )
 import Data.Functor
 import Data.Int ( Int )
-import Data.List ( take )
+import Data.List ( (++), take )
 import qualified Data.Text as T
 import Data.Text.Encoding ( decodeUtf8, encodeUtf8 )
 import System.Random ( randoms )
@@ -57,3 +58,10 @@ createRandomCsrf :: IO CSRFToken
 createRandomCsrf = do
     prng <- newPureMT
     return $ (CSRFToken . encode . BS.pack . fmap fromIntegral) (take 24 (randoms prng :: [Int]))
+
+readCsrfFromText :: (Monad m) => T.Text -> m CSRFToken
+readCsrfFromText t =
+    if T.length t == 32 then
+        (return . CSRFToken . encodeUtf8) t
+    else
+        fail ("'" ++ T.unpack t ++ "' is not the right length for a CSRF token (" ++ show (T.length t) ++ " chars instead of 32 chars" )
