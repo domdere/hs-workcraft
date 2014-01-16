@@ -93,7 +93,7 @@ library
                         Handler.Home
 
     other-modules:      Data.Csrf
-                        Web.ZHandler
+                        Control.Monad.HTTPResponse
                         Web.ZYesod
 
     if flag(dev) || flag(library-only)

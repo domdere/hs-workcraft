@@ -24,7 +24,7 @@ along with Workcraft.  If not, see <http://www.gnu.org/licenses/>.
 -- stuff that it just seems easier to get out of the yesod code and implement the simple
 -- stuff myself instead of digging through the yesod code.
 --
--- This module will be about translating to and from the ZHandler Monad
+-- This module will be about translating to and from the HTTPResponse Monad
 --
 module Web.ZYesod where
 
@@ -51,7 +51,7 @@ import Network.Wai
 import Yesod
 import Yesod.Core.Handler
 
-import Web.ZHandler
+import Control.Monad.HTTPResponse
 
 class
     (   Yesod m
@@ -61,12 +61,8 @@ class
     ,   PersistMonadBackend (YesodPersistBackend m (HandlerT m IO)) ~ SqlBackend
     ) => ZYesod m
 
--- | WIP: This should pull the info of interest into a Request
--- and then run a ZHandler Monad with it, but i havent finished
--- writing the monad, i just want to make sure I know how to get the info i want
--- with Yesod...
-convertZHandlerIO :: (ZYesod m) => ZHandlerT IO a -> HandlerT m IO a
-convertZHandlerIO z =
+convertHTTPResponseIO :: (ZYesod m) => HTTPResponseT IO a -> HandlerT m IO a
+convertHTTPResponseIO z =
     let
         prepareHeaders = fmap ((decodeUtf8 . original) *** decodeUtf8) . toList . runHeaders . getAllHeaders
         prepareCookies = toList . cookieMap . getSetCookie
@@ -74,29 +70,29 @@ convertZHandlerIO z =
         yesodReq <- getRequest
         waiReq <- waiRequest
         body <- (lift . lazyConsume . requestBody) waiReq
-        let headers = (ZHeaders . fromList . requestHeaders) waiReq
+        let headers = (HTTPHeaders . fromList . requestHeaders) waiReq
         let getParams = (fromList . reqGetParams) yesodReq
-        let cookieParams = (ZCookie . fromList . reqCookies) yesodReq
+        let cookieParams = (CookieMap . fromList . reqCookies) yesodReq
         let reqBody = BS.fromChunks body
-        let req = ZRequest getParams cookieParams headers reqBody
-        (eResult, s) <- liftIO $ runZHandlerT req z
+        let req = HTTPRequest getParams cookieParams headers reqBody
+        (eResult, s) <- liftIO $ runHTTPResponseT req z
         -- make sure to log everything..
         sequence_ $ logZMsg <$> getLogMsgs s
         case eResult of
             -- now to determine the response, first check if there was an error
             -- if there was, we dont need to set the headers, Yesod can set them
             -- appropriately depending on the users request headers...
-            Left ZNotFound                  -> notFound
-            Left (ZServerError msg)         -> error (T.unpack msg)
-            Left (ZPermissionDenied msg)    -> permissionDenied msg
-            Left ZBadMethod                 -> badMethod
-            Left (ZInvalidArgs msgs)        -> invalidArgs msgs
+            Left HTTPNotFound                  -> notFound
+            Left (HTTPServerError msg)         -> error (T.unpack msg)
+            Left (HTTPPermissionDenied msg)    -> permissionDenied msg
+            Left HTTPBadMethod                 -> badMethod
+            Left (HTTPInvalidArgs msgs)        -> invalidArgs msgs
             Right val                       -> do
                 -- set the headers and session values and return the result
                 sequence_ $ uncurry addHeader <$> prepareHeaders s
                 sequence_ $ uncurry setSession <$> prepareCookies s
                 return val
 
-logZMsg :: ZLogMessage -> HandlerT m IO ()
+logZMsg :: HTTPLogMessage -> HandlerT m IO ()
 logZMsg (Info msg)  = $(logInfo) msg
 logZMsg (Debug msg) = $(logDebug) msg
