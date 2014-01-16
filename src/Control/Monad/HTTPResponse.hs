@@ -213,19 +213,19 @@ runHTTPResponse = (runIdentity .) . runHTTPResponseT
 
 -- | Error codes for different error scenarios
 --
--- >>> zErrorCode ZNotFound
+-- >>> zErrorCode HTTPNotFound
 -- 404
 --
--- >>> zErrorCode ZBadMethod
+-- >>> zErrorCode HTTPBadMethod
 -- 405
 --
--- >>> zErrorCode (ZPermissionDenied "")
+-- >>> zErrorCode (HTTPPermissionDenied "")
 -- 403
 --
--- >>> zErrorCode (ZInvalidArgs [])
+-- >>> zErrorCode (HTTPInvalidArgs [])
 -- 400
 --
--- >>> zErrorCode (ZServerError "")
+-- >>> zErrorCode (HTTPServerError "")
 -- 500
 --
 zErrorCode :: HTTPError -> Int
