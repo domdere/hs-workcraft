@@ -34,5 +34,11 @@ along with Workcraft.  If not, see <http://www.gnu.org/licenses/>.
 --
 -- <http://www.haskellforall.com/2012/07/purify-code-using-free-monads.html>
 -------------------------------------------------------------------
-module Control.Monad.PureDB where
+module Control.Monad.PureDB (
+    -- * The Monad And Transformer
+        PureStore
+    ,   PureStoreT
+    ) where
+
+import Control.Monad.PureDB.Class
 
