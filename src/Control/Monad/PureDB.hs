@@ -17,4 +17,22 @@ You should have received a copy of the GNU General Public License
 along with Workcraft.  If not, see <http://www.gnu.org/licenses/>.
 -}
 
+-------------------------------------------------------------------
+-- |
+-- Module       : Control.Monad.PureDB
+-- Copyright    : (C) 2014 Dom De Re
+-- License      : GPL 3 (see the file etc/LICENSE.md)
+-- Maintainer   : Dom De Re
+--
+-- A Pure Monad for managing DB operations and making them a little
+-- more unit testable, with HTTPResponse I used a stack of
+-- other standard transformers (ReaderT, WriterT, ErrorT etc..)
+-- to create a Pure Monad for HTTP responses...
+--
+-- This time I want to give Free Monads a try (just to learn
+-- about Free Monads), after having read this article:
+--
+-- <http://www.haskellforall.com/2012/07/purify-code-using-free-monads.html>
+-------------------------------------------------------------------
 module Control.Monad.PureDB where
+
