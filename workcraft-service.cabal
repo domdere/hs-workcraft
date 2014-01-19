@@ -39,6 +39,7 @@ library
                     ,   case-insensitive              >= 1.1        && < 1.2
                     ,   containers                    >= 0.5        && < 0.6
                     ,   crypto-api                    >= 0.12       && < 0.13
+                    ,   free                          >= 4.2        && < 4.3
                     ,   mersenne-random-pure64        >= 0.2        && < 0.3
                     ,   mtl                           >= 2.1        && < 2.2
                     ,   yesod                         >= 1.2        && < 1.3
@@ -94,6 +95,7 @@ library
 
     other-modules:      Data.Csrf
                         Control.Monad.HTTPResponse
+                        Control.Monad.PureDB
                         Web.ZYesod
 
     if flag(dev) || flag(library-only)
