@@ -61,8 +61,6 @@ get = liftPureStoreF . flip Get id
 --
 insert :: (Monad m) => v -> PureStoreT k v m k
 insert = liftPureStoreF . flip Insert id
-liftPureStoreF :: (Monad m) => PureStoreF k v a -> PureStoreT k v m a
-liftPureStoreF = PureStoreT . liftF
 
 -- |
 -- same as `insert` but it doesnt bother returning the
@@ -104,3 +102,8 @@ replace k v = liftPureStoreF $ Replace k v ()
 --
 delete :: (Monad m) => k -> PureStoreT k v m ()
 delete = liftPureStoreF . flip Delete ()
+
+-- Helpers
+
+liftPureStoreF :: (Monad m) => PureStoreF k v a -> PureStoreT k v m a
+liftPureStoreF = PureStoreT . liftF
