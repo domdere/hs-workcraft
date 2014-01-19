@@ -38,7 +38,17 @@ module Control.Monad.PureDB (
     -- * The Monad And Transformer
         PureStore
     ,   PureStoreT
+    -- * Basic operations
+    ,   get
+    ,   insert
+    ,   insertNoKey
+    ,   insertMany
+    ,   insertKey
+    ,   repsert
+    ,   replace
+    ,   delete
     ) where
 
-import Control.Monad.PureDB.Class
+import Control.Monad.PureDB.Base
+import Control.Monad.PureDB.Class ( PureStore, PureStoreT )
 

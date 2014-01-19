@@ -98,6 +98,7 @@ library
     other-modules:      Data.Csrf
                         Control.Monad.HTTPResponse
                         Control.Monad.PureDB
+                        Control.Monad.PureDB.Base
                         Control.Monad.PureDB.Class
                         Web.ZYesod
 

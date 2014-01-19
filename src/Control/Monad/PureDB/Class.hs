@@ -54,10 +54,27 @@ import Data.Functor.Identity
 import qualified Data.Map as M
 import Data.Maybe ( Maybe )
 
--- | The Functor that will form the basis of the Free Monad...
--- it "models" the `PersistStore` class of `Database.Persist`
+-- |
+--  The Functor that will form the basis of the Free Monad...
+--  it "models" the `PersistStore` class of `Database.Persist`
+--
+--  Cons:
+--
+--      -   Each Monad instance only handles DB ops of of a certain record (and key) type...
+--
+--      -   Therefore record types for an app must have a hierarchy that allows
+--          for all the DB operations to be grouped up per type and sorted by type (with an
+--          ordering thats constant over the app) without causing them to fail... (that seems like
+--          a big ask, but maybe that requirement just makes the design simpler).
+--
+--  Pros:
+--
+--      -   The monad's single record type enables a possible homomorphism
+--          from (PureStoreT k v m a) to (StateT (Map k v, Stream k) m a) allowing easier/simpler equational
+--          reasoning and unit testing.
+--
 data PureStoreF k v a =
-        Get k (Maybe k -> a)
+        Get k (Maybe v -> a)
     |   Insert v (k -> a)
     |   InsertNoKey v a
     |   InsertMany [v] ([k] -> a)
