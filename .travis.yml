@@ -1,5 +1,0 @@
-language: haskell
-
-branches:
-    only:
-        -   master
