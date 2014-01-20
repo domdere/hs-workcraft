@@ -4,6 +4,11 @@ Workcraft Service
 
 An blogging backend service to learn about and/or experiment with **Yesod**.
 
+# Haddock Documentation
+
+-   Internal Documentation for Collaborators can be found [**here**] [internal-haddock].
+-   Public API Documentation can be found [**here**] [public-api]
+
 ## Building the project
 
 The project must be "configured" at least once everytime `workcraft-service.cabal` changes, this can be done with:
@@ -65,3 +70,5 @@ is a thin layer of code that uses modules from `src/`.
 [cabal-dev]: https://github.com/creswick/cabal-dev "creswick/cabal-dev on GitHub.com"
 [yesod-home]: http://www.yesodweb.com/ "Yesod Web Application Framework"
 [development-guide]: docs/DevelopmentGuide/README.md "Development Guide"
+[internal-haddock]: http://domdere.github.io/hs-workcraft/internal/ "Internal Haddock documentation"
+[public-api]: http://domdere.github.io/hs-workcraft/public/ "Public API Haddock Documentation"
